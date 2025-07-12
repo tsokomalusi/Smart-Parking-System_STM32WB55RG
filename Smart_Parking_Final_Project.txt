@@ -1,0 +1,153 @@
+#include "mbed.h"
+
+/* SERIAL COMMUNICATION */
+UnbufferedSerial pc(USBTX, USBRX, 115200);
+
+/* INPUTS */
+DigitalIn entrySensor(PB_8);     // Entry presence sensor
+DigitalIn exitSensor(PC_12);     // Exit presence sensor
+DigitalIn slot1Sensor(PC_13);
+DigitalIn slot2Sensor(PA_6);
+DigitalIn slot3Sensor(PB_9);
+DigitalIn overrideEntry(PC_5);   // Button 1 (active-low)
+DigitalIn overrideExit(PC_6);    // Button 2 (active-low)
+DigitalIn emergencySwitch(PB_2); // Switch 1 (active-high)
+
+/* OUTPUTS */
+DigitalOut entryBarrier(PB_1);
+DigitalOut exitBarrier(PB_15);
+DigitalOut fullIndicator(PB_0);
+DigitalOut slot1Led(PC_4);
+DigitalOut slot2Led(PD_0);
+DigitalOut slot3Led(PD_1);
+DigitalOut green1(PB_13);
+DigitalOut green2(PB_14);
+
+
+// Note: We do not use the third LED or create a DigitalOut obj here because it shares
+// physical pin with the exit_barrier actuator so it would conflict.
+
+/* SERVO */
+PwmOut servo(PA_15);
+
+/* LOGIC */
+#define MAX_SLOTS 3
+int availableSlots = MAX_SLOTS;
+bool emergencyMode = false;
+
+// Moves the servo from 0 to 180 and back as proposed
+// in the assignment and using or specific SG90 variation spec.
+void moveServo() {
+    servo.pulsewidth_us(500); // 0 deg
+    ThisThread::sleep_for(300ms);
+    servo.pulsewidth_us(2500); // 180 deg
+    ThisThread::sleep_for(300ms);
+    servo.pulsewidth_us(500); // back to 0
+}
+
+// Sends a signal to open the entry barrier (and moves the servo).
+// We keep the signal active for a while. If a car is waiting we expect it to
+// enter on its own. Note that this is a signal to open only, it will close
+// automatically regardless of whether we return the signal to 0 or not.
+void openEntryBarrier() {
+    entryBarrier = 1;
+    moveServo();
+    ThisThread::sleep_for(1000ms);
+    entryBarrier = 0;
+}
+
+// Opens the exit barrier applying the same logic as with the entryBarrier one.
+void openExitBarrier() {
+    exitBarrier = 1;
+    moveServo();
+    ThisThread::sleep_for(1000ms);
+    exitBarrier = 0;
+}
+
+void updateSlotIndicators() {
+
+    // Check the presence sensors to know if the parking slots are occupid or not.
+    bool s1 = slot1Sensor.read();
+    bool s2 = slot2Sensor.read();
+    bool s3 = slot3Sensor.read();
+
+    // Update the parking's green/red occupancy indicators.
+    slot1Led = s1;
+    slot2Led = s2;
+    slot3Led = s3;
+
+    // According to the assignment spec, if all slots are full, our indicator 
+    // should be red.
+    fullIndicator = s1 && s2 && s3;
+
+    // Also, if they are NOT full, the physical green LED 1 should be lit.
+    green1 = s1 || s2 || s3;
+}
+
+/* MAIN LOOP */
+int main() {
+    printf("Smart Parking Initialized\n");
+
+    entryBarrier = 0;
+    exitBarrier = 0;
+    servo.period_ms(20);
+    servo.pulsewidth_us(500); // Initial position
+
+    updateSlotIndicators();
+
+    // Startup stabilization.
+    // Give it some time.
+    ThisThread::sleep_for(5000ms);
+
+    while (true) {
+
+        // Check if we should enable the emergency mode.
+        if(!emergencyMode && emergencySwitch.read()) {
+            printf("EMERGENCY MODE ENABLED\n");
+        }
+
+        // Check if we should disable the emergency mode.
+        if(emergencyMode && !emergencySwitch.read()) {
+            printf("EMERGENCY_MODE DISABLED\n");
+        }
+
+        // Updates the state of the red/green parking indicators and the 
+        // full parking one.
+        updateSlotIndicators();
+
+        // Handle exit logic
+        if (!emergencyMode && exitSensor.read()) {
+            openExitBarrier();
+            if (availableSlots < MAX_SLOTS) {
+                availableSlots++;
+                printf("A car has left. %d slots available.\n", availableSlots);
+            }
+            // Give the car time to exit.
+            ThisThread::sleep_for(2000ms);
+        }
+
+        // Handle entry logic
+        if (!emergencyMode && entrySensor.read() && availableSlots > 0) {
+            openEntryBarrier();
+            availableSlots--;
+            printf("A car has entered. %d slots available.\n", availableSlots);
+            // Give the car time to enter. 
+            ThisThread::sleep_for(2000ms);
+        }
+
+        // Overrides (active-low buttons)
+        if (!overrideEntry.read()) {
+            openEntryBarrier();
+            ThisThread::sleep_for(2000ms);
+        }
+
+        if (!overrideExit.read()) {
+            openExitBarrier();
+            ThisThread::sleep_for(2000ms);
+        }
+
+        ThisThread::sleep_for(100ms);
+    }
+}
+
+

@@ -1,0 +1,69 @@
+/*
+Description:
+------------
+Use a potentiometer to control the angle of a servo motor while also adjusting LED brightness to match the servo’s position.
+
+Assignment instructions:
+------------------------
+
+1.	Read the potentiometer value
+a.	Use AnalogIn to read the voltage from potentiometer 2.
+b.	Convert the analog value (0V - 3.3V) to an angle (0° - 180°).
+2.	Control the Servo
+a.	Set the servo angle based on the potentiometer reading.
+b.	Use pulsewidth_us() or write() to send the correct PWM signal.
+3.	Adjust LED Brightness
+a.	The brighter the LED, the higher the servo angle.
+b.	Use PWM on an LED to match the potentiometer value (i.e., as the servo moves, the LED brightness increases proportionally).
+4.	Test & Fine-Tune
+a.	Print the potentiometer value and servo angle to the Serial Terminal for debugging.
+b.	Ensure the LED smoothly brightens and dims as the servo moves.
+
+Expected behaviour:
+-------------------
+
+•	When the potentiometer is at 0V, the servo moves to 0° and the LED is off.
+•	At 1.65V, the servo moves to 90°, and the LED is at 50% brightness.
+•	At 3.3V, the servo moves to 180°, and the LED is at full brightness.
+
+*/
+
+#include "mbed.h"
+
+// Define pin assignments
+// #define LED_1 PB_13
+// #define POT_2 PC_1
+
+// Serial communication
+UnbufferedSerial pc(USBTX, USBRX, 112500);
+
+PwmOut led(PB_13);
+PwmOut servo(PA_15);
+AnalogIn pot2(PC_1);
+
+int main()  {
+
+    int potValue= 0;
+    int voltage_mV = 0;
+    int servo_angle = 0;
+    int pulse_width = 0;
+
+    while(true) {
+    
+    // Read voltage the potentiometer (0.0 -> 1.0 scale)
+    // Convert to millivots  (assuming 3.3 V reference)
+    potValue = (int)(pot2.read());
+    voltage_mV = (potValue * 3300);   // in volts
+    servo_angle = (potValue * 180);   // in degrees
+    pulse_width = 500 + (servo_angle/180)*2000; // 500 us -> 2500us
+
+    led.write(potValue);   // LED brightness
+
+    servo.pulsewidth_us((int)pulse_width);   // servo control
+
+    printf("Potentiometer: %d V, Servo Angle: %d deg\r\n", voltage_mV, servo_angle);
+    ThisThread::sleep_for(100ms);
+
+
+    }
+}
